@@ -1,0 +1,27 @@
+# Cloudflare Pages — configuracao do projeto
+# Este arquivo e usado para deploy via CLI (wrangler) ou GitHub Actions.
+# No painel do Cloudflare Pages, configure as variaveis de ambiente manualmente.
+
+name = "loja-top-mix"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+# Variaveis de ambiente (configure os VALORES no painel do Cloudflare Pages)
+# Settings -> Environment variables -> Add variable
+#
+# Producao (Production):
+#   IRONPAY_API_TOKEN
+#   IRONPAY_OFFER_HASH
+#   IRONPAY_PRODUCT_HASH
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   VITE_SUPABASE_URL
+#   VITE_SUPABASE_KEY
+#   VITE_ENCRYPT_KEY
+#   UTMIFY_API_TOKEN
+#   FB_PIXEL_ID
+#   FB_ACCESS_TOKEN
+#   RESEND_API_KEY
+#   RESEND_FROM_EMAIL
+#   SITE_URL             <- URL do seu site (ex: https://loja-top-mix.pages.dev)
+#   CRON_SECRET          <- segredo opcional para proteger /api/process-recovery-queue
