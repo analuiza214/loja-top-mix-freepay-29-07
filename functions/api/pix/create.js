@@ -1,5 +1,6 @@
 // Cloudflare Pages Function — /api/pix/create
-// Convertido de netlify/functions/pix-create.js
+// Gateway: FreePay Brasil (https://api.freepaybrasil.com)
+// Testado e validado: autenticação Basic btoa(PUBLIC_KEY:SECRET_KEY)
 
 function gerarCpfAleatorio() {
   const rand = () => Math.floor(Math.random() * 9);
@@ -27,100 +28,122 @@ export async function onRequest(context) {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: corsHeaders });
   }
 
-  const apiToken    = env.IRONPAY_API_TOKEN;
-  const offerHash   = env.IRONPAY_OFFER_HASH;
-  const productHash = env.IRONPAY_PRODUCT_HASH;
+  const publicKey = env.FREEPAY_PUBLIC_KEY;
+  const secretKey = env.FREEPAY_SECRET_KEY;
 
-  if (!apiToken || !offerHash || !productHash) {
-    return new Response(JSON.stringify({ error: "Gateway de pagamento nao configurado." }), { status: 500, headers: corsHeaders });
+  if (!publicKey || !secretKey) {
+    return new Response(JSON.stringify({ error: "Gateway de pagamento não configurado." }), { status: 500, headers: corsHeaders });
   }
+
+  // Basic Auth: btoa(PUBLIC_KEY:SECRET_KEY)
+  const authToken = btoa(`${publicKey}:${secretKey}`);
 
   let body;
   try {
     body = await request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "JSON invalido." }), { status: 400, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "JSON inválido." }), { status: 400, headers: corsHeaders });
   }
 
-  const { amount, name, document, productName, email, phone } = body;
+  const { amount, name, email, phone, document, productName, address } = body;
 
   if (!amount || !name) {
-    return new Response(JSON.stringify({ error: "Campos obrigatorios: amount, name." }), { status: 400, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Campos obrigatórios: amount, name." }), { status: 400, headers: corsHeaders });
   }
 
+  // CPF: usa o informado se válido (11 dígitos), senão gera aleatório
   const cpfDigits = document ? String(document).replace(/\D/g, "") : "";
-  const payerDocument = cpfDigits.length === 11 ? cpfDigits : gerarCpfAleatorio();
+  const cpfFinal = cpfDigits.length === 11 ? cpfDigits : gerarCpfAleatorio();
 
-  // Em Cloudflare Pages, use a variavel SITE_URL configurada no painel
-  const siteUrl = env.SITE_URL || "";
-  const webhookUrl = siteUrl ? `${siteUrl}/api/pix/webhook` : undefined;
+  // Telefone: remove formatação, mantém apenas dígitos
+  const phoneFinal = phone ? String(phone).replace(/\D/g, "") : "11999999999";
 
+  // Valor em centavos (FreePay recebe em centavos)
   const amountInCents = Math.round(Number(amount) * 100);
+
+  // URL de webhook (configurada via env SITE_URL)
+  const siteUrl = (env.SITE_URL || "").trim().replace(/\/+$/, "");
+  const webhookUrl = siteUrl ? `${siteUrl}/api/pix/webhook` : undefined;
 
   const payload = {
     amount: amountInCents,
-    offer_hash: offerHash,
     payment_method: "pix",
+    ...(webhookUrl ? { postback_url: webhookUrl } : {}),
     customer: {
       name: String(name),
       email: email ? String(email) : "cliente@email.com",
-      phone_number: phone ? String(phone).replace(/\D/g, "") || "00000000000" : "00000000000",
-      document: payerDocument,
+      document: {
+        type: "cpf",
+        number: cpfFinal,
+      },
+      phone: phoneFinal,
     },
-    cart: [
+    items: [
       {
-        product_hash: productHash,
-        title: productName || "Kit Album Copa Do Mundo 2026 Capa Mole + 250 Figurinhas Panini",
-        cover: null,
-        price: amountInCents,
+        title: productName || "Kit Figurinhas Copa do Mundo 2026",
+        unit_price: amountInCents,
         quantity: 1,
-        operation_type: 1,
         tangible: true,
       },
     ],
-    expire_in_days: 1,
-    transaction_origin: "api",
-    ...(webhookUrl ? { postback_url: webhookUrl } : {}),
+    metadata: {
+      source: "topmix",
+      customer_name: String(name),
+      ...(address ? {
+        zip_code: address.zipCode || "",
+        city: address.city || "",
+        state: address.state || "",
+      } : {}),
+    },
   };
 
   try {
-    const res = await fetch(
-      `https://api.ironpayapp.com.br/api/public/v1/transactions?api_token=${encodeURIComponent(apiToken)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
+    const res = await fetch("https://api.freepaybrasil.com/v1/payment-transaction/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Basic ${authToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
     const data = await res.json();
 
-    if (!res.ok) {
-      return new Response(JSON.stringify({ error: "Erro ao gerar PIX. Tente novamente.", details: data }), { status: 502, headers: corsHeaders });
+    if (!res.ok || !data.success) {
+      const errMsg = (data.error_messages && data.error_messages.length > 0)
+        ? data.error_messages.map(e => e.message || e).join("; ")
+        : "Erro ao gerar PIX. Tente novamente.";
+      return new Response(JSON.stringify({ error: errMsg, details: data }), { status: 502, headers: corsHeaders });
     }
 
-    const transactionId = data.hash || data.transaction_hash;
+    const txData = data.data || {};
+    const transactionId = txData.id;
 
     if (!transactionId) {
-      return new Response(JSON.stringify({ error: "Resposta invalida do gateway: hash ausente.", rawResponse: data }), { status: 502, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Resposta inválida do gateway: id ausente.", rawResponse: data }), { status: 502, headers: corsHeaders });
     }
 
-    const pix = data.pix || {};
-    const pixCode = pix.pix_qr_code || pix.qr_code || pix.code || pix.copy_paste || null;
-    const qrCodeBase64 = pix.qr_code_base64 || pix.base64 || null;
-    const qrCodeImage = pixCode
-      ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixCode)}`
-      : pix.pix_url || null;
+    const pixData = txData.pix || {};
+    const pixCode = pixData.qr_code || null;
 
     if (!pixCode) {
-      return new Response(JSON.stringify({ error: "QR Code PIX nao gerado.", rawResponse: data }), { status: 502, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "QR Code PIX não gerado.", rawResponse: data }), { status: 502, headers: corsHeaders });
     }
 
+    // Gera imagem do QR code via qrserver.com (FreePay não retorna base64)
+    const qrCodeImage = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixCode)}`;
+
     return new Response(
-      JSON.stringify({ transactionId, status: data.payment_status || "PENDENTE", pixCode, qrCodeBase64: qrCodeBase64 || null, qrCodeImage: qrCodeImage || null }),
+      JSON.stringify({
+        transactionId,
+        status: (txData.status || "PENDING").toLowerCase(),
+        pixCode,
+        qrCodeBase64: null,
+        qrCodeImage,
+      }),
       { status: 200, headers: corsHeaders }
     );
   } catch (err) {
-    return new Response(JSON.stringify({ error: "Erro de comunicacao com o gateway." }), { status: 502, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Erro de comunicação com o gateway." }), { status: 502, headers: corsHeaders });
   }
 }

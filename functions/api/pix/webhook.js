@@ -1,6 +1,17 @@
 // Cloudflare Pages Function — /api/pix/webhook
-// Convertido de netlify/functions/pix-webhook.js
-// Recebe notificacoes da IronPay e responde 200 para evitar reenvios.
+// Gateway: FreePay Brasil
+//
+// FreePay envia notificações no formato PascalCase:
+// {
+//   "Id": "...",
+//   "Status": "PENDING|PAID|REFUNDED|REFUSED|EXPIRED|ERROR|...",
+//   "Amount": 100,  // em reais
+//   "PaymentMethod": "pix",
+//   "ExternalId": "...",
+//   "PaidAt": "...",
+//   "UpdatedAt": "...",
+//   "PostbackUrl": "..."
+// }
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,14 +32,17 @@ export async function onRequest(context) {
   try {
     const notification = await request.json();
     console.log(JSON.stringify({
-      event: "IRONPAY_WEBHOOK_RECEIVED",
-      transaction_hash: notification.transaction_hash || null,
-      status: notification.status || null,
-      amount: notification.amount || null,
+      event: "FREEPAY_WEBHOOK_RECEIVED",
+      transaction_id: notification.Id || null,
+      status: notification.Status || null,
+      amount: notification.Amount || null,
+      payment_method: notification.PaymentMethod || null,
+      paid_at: notification.PaidAt || null,
     }));
   } catch {
-    // corpo invalido — responde 200 mesmo assim para nao gerar retentativas
+    // corpo inválido — responde 200 mesmo assim para não gerar retentativas
   }
 
+  // FreePay aguarda HTTP 200 para confirmar recebimento
   return new Response(JSON.stringify({ received: true }), { status: 200, headers: corsHeaders });
 }

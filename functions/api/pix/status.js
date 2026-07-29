@@ -1,5 +1,6 @@
 // Cloudflare Pages Function — /api/pix/status
-// Convertido de netlify/functions/pix-status.js
+// Gateway: FreePay Brasil
+// GET /api/pix/status?transactionId=<id>
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,23 +19,31 @@ export async function onRequest(context) {
   }
 
   const url = new URL(request.url);
-  // Suporte a ambos os parametros: transactionId e id
   const transactionId = url.searchParams.get("transactionId") || url.searchParams.get("id");
 
   if (!transactionId) {
-    return new Response(JSON.stringify({ error: "transactionId obrigatorio" }), { status: 400, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "transactionId obrigatório" }), { status: 400, headers: corsHeaders });
   }
 
-  const apiToken = env.IRONPAY_API_TOKEN;
+  const publicKey = env.FREEPAY_PUBLIC_KEY;
+  const secretKey = env.FREEPAY_SECRET_KEY;
 
-  if (!apiToken) {
-    return new Response(JSON.stringify({ error: "Gateway nao configurado" }), { status: 500, headers: corsHeaders });
+  if (!publicKey || !secretKey) {
+    return new Response(JSON.stringify({ error: "Gateway não configurado" }), { status: 500, headers: corsHeaders });
   }
+
+  const authToken = btoa(`${publicKey}:${secretKey}`);
 
   try {
     const res = await fetch(
-      `https://api.ironpayapp.com.br/api/public/v1/transactions/${encodeURIComponent(transactionId)}?api_token=${encodeURIComponent(apiToken)}`,
-      { method: "GET", headers: { "Content-Type": "application/json" } }
+      `https://api.freepaybrasil.com/v1/payment-transaction/info/${encodeURIComponent(transactionId)}`,
+      {
+        method: "GET",
+        headers: {
+          "Authorization": `Basic ${authToken}`,
+          "Content-Type": "application/json",
+        },
+      }
     );
 
     const data = await res.json();
@@ -43,12 +52,21 @@ export async function onRequest(context) {
       return new Response(JSON.stringify({ error: "Erro ao consultar gateway.", details: data }), { status: 502, headers: corsHeaders });
     }
 
-    const rawStatus = (data.payment_status || data.status || "").toUpperCase();
-    const isPaid    = rawStatus === "PAID";
-    const isExpired = rawStatus === "CANCELED" || rawStatus === "REFUNDED";
+    // A resposta pode vir diretamente ou dentro de data.data
+    const txData = data.data || data;
+
+    const rawStatus = (txData.status || "PENDING").toUpperCase();
+    const isPaid = rawStatus === "PAID";
+    const isExpired = ["EXPIRED", "REFUSED", "FAILED", "REFUNDED", "ERROR"].includes(rawStatus);
 
     return new Response(
-      JSON.stringify({ transactionId, status: rawStatus.toLowerCase(), isPaid, isExpired, payedAt: data.paid_at || null }),
+      JSON.stringify({
+        transactionId,
+        status: rawStatus.toLowerCase(),
+        isPaid,
+        isExpired,
+        payedAt: txData.paid_at || null,
+      }),
       { status: 200, headers: corsHeaders }
     );
   } catch (err) {
