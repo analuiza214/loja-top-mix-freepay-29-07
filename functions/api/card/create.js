@@ -130,6 +130,15 @@ export async function onRequest(context) {
       expiration_year: expYear,
       cvv: String(card.cvv || ""),
     },
+    metadata: {
+      source: "topmix",
+      customer_name: String(name),
+      ...(body.address ? {
+        zip_code: body.address.zipCode || "",
+        city: body.address.city || "",
+        state: body.address.state || "",
+      } : {}),
+    },
   };
 
   // ── Chamada à API FreePay ─────────────────────────────────────────────────────
