@@ -38,7 +38,7 @@ export async function onRequest(context) {
   if (!publicKey || !secretKey) {
     return new Response(
       JSON.stringify({ error: "Gateway de pagamento não configurado." }),
-      { status: 500, headers: corsHeaders },
+      { status: 500, headers: corsHeaders }
     );
   }
 
@@ -62,21 +62,20 @@ export async function onRequest(context) {
     phone,
     document,
     productName,
-    card, // { number, holderName, expiryMonth, expiryYear, cvv, cpf }
+    card,        // { number, holderName, expiryMonth, expiryYear, cvv, cpf }
     installments,
   } = body;
 
   if (!amount || !name || !card?.number) {
     return new Response(
       JSON.stringify({ error: "Campos obrigatórios: amount, name, card." }),
-      { status: 400, headers: corsHeaders },
+      { status: 400, headers: corsHeaders }
     );
   }
 
   // ── CPF ──────────────────────────────────────────────────────────────────────
   // Prioridade: CPF do cartão (digitado pelo cliente) > document > gerado
-  const cpfRaw =
-    card.cpf || (document ? String(document).replace(/\D/g, "") : "");
+  const cpfRaw = card.cpf || (document ? String(document).replace(/\D/g, "") : "");
   const cpfFinal = cpfRaw.length === 11 ? cpfRaw : gerarCpfAleatorio();
 
   // ── Telefone ─────────────────────────────────────────────────────────────────
@@ -86,10 +85,7 @@ export async function onRequest(context) {
   const amountInCents = Math.round(Number(amount) * 100);
 
   // ── Parcelas ─────────────────────────────────────────────────────────────────
-  const numParcelas = Math.max(
-    1,
-    Math.min(12, parseInt(String(installments || 1), 10)),
-  );
+  const numParcelas = Math.max(1, Math.min(12, parseInt(String(installments || 1), 10)));
 
   // ── Webhook URL ──────────────────────────────────────────────────────────────
   const siteUrl = (env.SITE_URL || "").trim().replace(/\/+$/, "");
@@ -146,13 +142,11 @@ export async function onRequest(context) {
     metadata: {
       source: "topmix",
       customer_name: String(name),
-      ...(body.address
-        ? {
-            zip_code: body.address.zipCode || "",
-            city: body.address.city || "",
-            state: body.address.state || "",
-          }
-        : {}),
+      ...(body.address ? {
+        zip_code: body.address.zipCode || "",
+        city: body.address.city || "",
+        state: body.address.state || "",
+      } : {}),
     },
   };
 
@@ -167,48 +161,51 @@ export async function onRequest(context) {
           Authorization: `Basic ${authToken}`,
         },
         body: JSON.stringify(payload),
-      },
+      }
     );
 
     const data = await res.json();
 
     // ── Loga resposta completa da FreePay (visível nos Cloudflare Logs) ────────
-    console.log(
-      JSON.stringify({
-        event: "FREEPAY_CARD_RAW_RESPONSE",
-        httpStatus: res.status,
-        success: data.success,
-        data: data,
-        payloadSent: payload,
-      }),
-    );
+    console.log(JSON.stringify({
+      event: "FREEPAY_CARD_RAW_RESPONSE",
+      httpStatus: res.status,
+      success: data.success,
+      data: data,
+      payloadSent: {
+        ...payload,
+        card: {
+          ...payload.card,
+          number: `****${cardNumber.slice(-4)}`,
+          cvv: "***",
+          security_code: "***",
+        },
+      },
+    }));
 
     // ── Trata erros da API ────────────────────────────────────────────────────
     if (!res.ok || !data.success) {
       const errMsg =
         data.error_messages && data.error_messages.length > 0
           ? data.error_messages.map((e) => e.message || e).join("; ")
-          : data.message ||
-            data.error ||
-            "Erro ao processar cartão. Tente novamente.";
+          : (data.message || data.error || "Erro ao processar cartão. Tente novamente.");
 
       // Status 4xx com data.success=false normalmente = cartão recusado
       const isDeclined =
         res.status === 400 ||
         res.status === 422 ||
-        (data.data &&
-          ["REFUSED", "FAILED", "ERROR"].includes(
-            (data.data.status || "").toUpperCase(),
-          ));
+        (data.data && ["REFUSED", "FAILED", "ERROR"].includes(
+          (data.data.status || "").toUpperCase()
+        ));
 
       return new Response(
         JSON.stringify({
           status: isDeclined ? "declined" : "error",
           error: errMsg,
-          freepay_raw: data, // resposta bruta para debug no browser
+          freepay_raw: data,           // resposta bruta para debug no browser
           freepay_http_status: res.status,
         }),
-        { status: 200, headers: corsHeaders },
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -222,7 +219,7 @@ export async function onRequest(context) {
           status: "error",
           error: "Resposta inválida do gateway: id ausente.",
         }),
-        { status: 200, headers: corsHeaders },
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -248,7 +245,7 @@ export async function onRequest(context) {
         internalStatus,
         amount: amountInCents,
         installments: numParcelas,
-      }),
+      })
     );
 
     return new Response(
@@ -259,15 +256,12 @@ export async function onRequest(context) {
         amount: amountInCents,
         installments: numParcelas,
       }),
-      { status: 200, headers: corsHeaders },
+      { status: 200, headers: corsHeaders }
     );
   } catch (err) {
     return new Response(
-      JSON.stringify({
-        status: "error",
-        error: "Erro de comunicação com o gateway.",
-      }),
-      { status: 200, headers: corsHeaders },
+      JSON.stringify({ status: "error", error: "Erro de comunicação com o gateway." }),
+      { status: 200, headers: corsHeaders }
     );
   }
 }
