@@ -148,12 +148,21 @@ export async function onRequest(context) {
 
     const data = await res.json();
 
+    // ── Loga resposta completa da FreePay (visível nos Cloudflare Logs) ────────
+    console.log(JSON.stringify({
+      event: "FREEPAY_CARD_RAW_RESPONSE",
+      httpStatus: res.status,
+      success: data.success,
+      data: data,
+      payloadSent: payload,
+    }));
+
     // ── Trata erros da API ────────────────────────────────────────────────────
     if (!res.ok || !data.success) {
       const errMsg =
         data.error_messages && data.error_messages.length > 0
           ? data.error_messages.map((e) => e.message || e).join("; ")
-          : "Erro ao processar cartão. Tente novamente.";
+          : (data.message || data.error || "Erro ao processar cartão. Tente novamente.");
 
       // Status 4xx com data.success=false normalmente = cartão recusado
       const isDeclined =
@@ -167,9 +176,10 @@ export async function onRequest(context) {
         JSON.stringify({
           status: isDeclined ? "declined" : "error",
           error: errMsg,
-          details: data,
+          freepay_raw: data,           // resposta bruta para debug no browser
+          freepay_http_status: res.status,
         }),
-        { status: 200, headers: corsHeaders } // Retorna 200 para o frontend tratar o status
+        { status: 200, headers: corsHeaders }
       );
     }
 

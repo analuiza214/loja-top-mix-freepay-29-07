@@ -457,7 +457,12 @@ export default function Checkout() {
           transactionId?: string;
           status?: string;
           error?: string;
+          freepay_raw?: unknown;
+          freepay_http_status?: number;
         };
+
+        // 🔍 DEBUG — abre DevTools > Console para ver o erro exato da FreePay
+        console.log("[card/create] resposta completa:", JSON.stringify(data, null, 2));
 
         // Salva resultado para a página de sucesso
         sessionStorage.setItem("cardResult", JSON.stringify({
