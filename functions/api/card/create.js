@@ -149,14 +149,14 @@ export async function onRequest(context) {
       expiration_year: parseInt(expYear, 10),
       cvv: String(card.cvv || ""),
     },
-    // Doc oficial: metadata é uma STRING em formato JSON
-    metadata: JSON.stringify({
+    // A API valida metadata como OBJETO (Dictionary) — a doc diz string, mas está errada
+    metadata: {
       source: "topmix",
       customer_name: String(name),
       zip_code: zip,
       city: address?.city || "",
       state: address?.state || "",
-    }),
+    },
     ip: clientIp,
   };
 
