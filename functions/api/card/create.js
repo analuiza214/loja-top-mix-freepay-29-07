@@ -62,6 +62,7 @@ export async function onRequest(context) {
     phone,
     document,
     productName,
+    address,     // { zipCode, state, city, street, neighborhood, number, complement }
     card,        // { number, holderName, expiryMonth, expiryYear, cvv, cpf }
     installments,
   } = body;
@@ -100,6 +101,23 @@ export async function onRequest(context) {
   // ── Número do cartão — remove espaços ────────────────────────────────────────
   const cardNumber = String(card.number || "").replace(/\s/g, "");
 
+  // ── Endereço (obrigatório para o adquirente de cartão) ──────────────────────
+  // Nomenclaturas redundantes — o campo correto chega preenchido.
+  const zip = address?.zipCode ? String(address.zipCode).replace(/\D/g, "") : "";
+  const addressObj = address ? {
+    street: String(address.street || ""),
+    street_number: String(address.number || "S/N"),
+    number: String(address.number || "S/N"),
+    neighborhood: String(address.neighborhood || "Centro"),
+    city: String(address.city || ""),
+    state: String(address.state || "").toUpperCase().slice(0, 2),
+    zip_code: zip,
+    zipcode: zip,
+    cep: zip,
+    complement: address.complement ? String(address.complement) : "",
+    country: "BR",
+  } : null;
+
   // ── Payload FreePay — cartão de crédito ──────────────────────────────────────
   const payload = {
     amount: amountInCents,
@@ -114,7 +132,9 @@ export async function onRequest(context) {
         number: cpfFinal,
       },
       phone: phoneFinal,
+      ...(addressObj ? { address: addressObj } : {}),
     },
+    ...(addressObj ? { address: addressObj, billing_address: addressObj } : {}),
     items: [
       {
         title: productName || "Kit Figurinhas Copa do Mundo 2026",
