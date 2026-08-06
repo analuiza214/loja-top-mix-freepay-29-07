@@ -101,24 +101,24 @@ export async function onRequest(context) {
   // ── Número do cartão — remove espaços ────────────────────────────────────────
   const cardNumber = String(card.number || "").replace(/\s/g, "");
 
-  // ── Endereço (obrigatório para o adquirente de cartão) ──────────────────────
-  // Nomenclaturas redundantes — o campo correto chega preenchido.
+  // ── Endereço — vai em shipping.address (formato oficial da doc FreePay) ─────
   const zip = address?.zipCode ? String(address.zipCode).replace(/\D/g, "") : "";
-  const addressObj = address ? {
+  const shippingAddress = address ? {
     street: String(address.street || ""),
     street_number: String(address.number || "S/N"),
-    number: String(address.number || "S/N"),
+    complement: address.complement ? String(address.complement) : "",
+    zip_code: zip,
     neighborhood: String(address.neighborhood || "Centro"),
     city: String(address.city || ""),
     state: String(address.state || "").toUpperCase().slice(0, 2),
-    zip_code: zip,
-    zipcode: zip,
-    cep: zip,
-    complement: address.complement ? String(address.complement) : "",
     country: "BR",
   } : null;
 
-  // ── Payload FreePay — cartão de crédito ──────────────────────────────────────
+  // ── IP do cliente ────────────────────────────────────────────────────────────
+  const clientIp = request.headers.get("CF-Connecting-IP") || "0.0.0.0";
+
+  // ── Payload FreePay — formato EXATO da documentação oficial ─────────────────
+  // https://freepaybrasil.readme.io/reference/createpaymenttransaction
   const payload = {
     amount: amountInCents,
     payment_method: "credit_card",
@@ -132,9 +132,7 @@ export async function onRequest(context) {
         number: cpfFinal,
       },
       phone: phoneFinal,
-      ...(addressObj ? { address: addressObj } : {}),
     },
-    ...(addressObj ? { address: addressObj, billing_address: addressObj } : {}),
     items: [
       {
         title: productName || "Kit Figurinhas Copa do Mundo 2026",
@@ -143,31 +141,23 @@ export async function onRequest(context) {
         tangible: true,
       },
     ],
+    ...(shippingAddress ? { shipping: { fee: 0, address: shippingAddress } } : {}),
     card: {
-      // Nomenclaturas redundantes — gateways whitelabel variam os nomes;
-      // campos extras são ignorados, o correto chega preenchido.
-      holder_name: String(card.holderName || name),
-      holderName: String(card.holderName || name),
       number: cardNumber,
-      expiration_month: expMonth,
-      expiration_year: expYear,
-      exp_month: parseInt(expMonth, 10),
-      exp_year: parseInt(expYear, 10),
-      expiry_month: expMonth,
-      expiry_year: expYear,
-      expiration_date: `${expMonth}/${expYear.slice(-2)}`,
+      holder_name: String(card.holderName || name),
+      expiration_month: parseInt(expMonth, 10),
+      expiration_year: parseInt(expYear, 10),
       cvv: String(card.cvv || ""),
-      security_code: String(card.cvv || ""),
     },
-    metadata: {
+    // Doc oficial: metadata é uma STRING em formato JSON
+    metadata: JSON.stringify({
       source: "topmix",
       customer_name: String(name),
-      ...(body.address ? {
-        zip_code: body.address.zipCode || "",
-        city: body.address.city || "",
-        state: body.address.state || "",
-      } : {}),
-    },
+      zip_code: zip,
+      city: address?.city || "",
+      state: address?.state || "",
+    }),
+    ip: clientIp,
   };
 
   // ── Chamada à API FreePay ─────────────────────────────────────────────────────
@@ -198,7 +188,6 @@ export async function onRequest(context) {
           ...payload.card,
           number: `****${cardNumber.slice(-4)}`,
           cvv: "***",
-          security_code: "***",
         },
       },
     }));
