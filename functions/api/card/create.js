@@ -237,12 +237,13 @@ export async function onRequest(context) {
 
     // Mapeia para os status internos do site
     let internalStatus;
-    if (rawStatus === "PAID" || rawStatus === "APPROVED") {
+    if (["PAID", "APPROVED", "AUTHORIZED", "CONFIRMED", "SUCCEEDED", "COMPLETED"].includes(rawStatus)) {
       internalStatus = "approved";
-    } else if (["REFUSED", "FAILED", "ERROR", "EXPIRED"].includes(rawStatus)) {
+    } else if (["REFUSED", "DECLINED", "FAILED", "ERROR", "EXPIRED", "CANCELED", "CANCELLED", "CHARGEDBACK"].includes(rawStatus)) {
       internalStatus = "declined";
     } else {
-      // PENDING — raro para cartão, mas tratamos como aprovado pendente
+      // PENDING / PROCESSING / WAITING — cartão debitado mas confirmação assíncrona;
+      // o site fica aguardando e consulta o status a cada 5s (igual ao PIX)
       internalStatus = "pending";
     }
 

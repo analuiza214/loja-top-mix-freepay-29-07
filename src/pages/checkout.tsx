@@ -532,6 +532,9 @@ export default function Checkout() {
         setProcessing(false);
         if (data.status === "approved") {
           setLocation("/sucesso?payment=card&status=approved");
+        } else if (data.status === "pending") {
+          // Cartão em processamento — a página de sucesso consulta o status até confirmar
+          setLocation("/sucesso?payment=card&status=pending");
         } else {
           setLocation("/sucesso?payment=card&status=declined");
         }
