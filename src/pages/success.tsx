@@ -336,6 +336,43 @@ export default function Success() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [payment]);
 
+  // ── Cartão aprovado: confirma pagamento assim que a animação termina ─────────
+  useEffect(() => {
+    if (payment !== "card" || phase !== "content") return;
+    const cardStatus = params.get("status");
+    if (cardStatus !== "approved") return;
+
+    // Lê resultado salvo pelo checkout
+    const rawResult = sessionStorage.getItem("cardResult");
+    let cardAmount = orderAmount;
+    let cardProduct = orderProductName;
+    let cardTxId = "";
+    if (rawResult) {
+      try {
+        const r = JSON.parse(rawResult) as { amount?: number; productName?: string; transactionId?: string };
+        if (r.amount && r.amount > 0) cardAmount = r.amount;
+        if (r.productName) cardProduct = r.productName;
+        cardTxId = r.transactionId || "";
+      } catch { /* ignored */ }
+    }
+
+    // Dispara eventos de Purchase (FB Pixel browser + GTM)
+    if (!trackingFired.current) {
+      trackingFired.current = true;
+      fireTrackingEvents(cardAmount, cardProduct);
+      pushEcommerceEvent("purchase", {
+        transaction_id: cardTxId || `card_${Date.now()}`,
+        currency: "BRL",
+        value: cardAmount,
+        payment_type: "credit_card",
+        items: [{ item_id: "topmix_order", item_name: cardProduct, price: cardAmount, quantity: 1 }],
+      }, { event_id: `card_${cardTxId || Date.now()}_purchase` });
+    }
+
+    clearCart();
+    setPaymentConfirmed(true);
+  }, [payment, phase, orderAmount, orderProductName]);
+
   // PIX: lê do sessionStorage (gerado no checkout via gateway)
   useEffect(() => {
     if (payment !== "pix" || hasFetched.current) return;

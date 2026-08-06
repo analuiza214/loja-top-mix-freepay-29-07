@@ -1,18 +1,29 @@
-# Cloudflare Pages — configuracao do projeto
-# Este arquivo e usado para deploy via CLI (wrangler) ou GitHub Actions.
-# No painel do Cloudflare Pages, configure as variaveis de ambiente manualmente.
+# Cloudflare Pages — configuração do projeto FreePay
+# Este arquivo é usado para deploy via CLI (wrangler) ou GitHub Actions.
+# No painel do Cloudflare Pages, configure as variáveis de ambiente manualmente.
 
 name = "loja-top-mix"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "dist"
 
+# ──────────────────────────────────────────────────────────────
+# KV NAMESPACE — Rate limit por IP no /api/pix/create
+# Reutilizando o mesmo namespace dos projetos anteriores.
+# Se quiser um namespace separado:
+#   1. Cloudflare Dashboard → Workers & Pages → KV → Create namespace
+#   2. Nome: pix-ratelimit → copie o Namespace ID gerado
+#   3. Substitua o id abaixo pelo novo ID
+# ──────────────────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "PIX_RATELIMIT"
+id      = "44122051ba9a4c83a7d09019a3671894"
+
 # Variaveis de ambiente (configure os VALORES no painel do Cloudflare Pages)
-# Settings -> Environment variables -> Add variable
+# Settings -> Environment variables -> Add variable -> marcar como Encrypted
 #
 # Producao (Production):
-#   IRONPAY_API_TOKEN
-#   IRONPAY_OFFER_HASH
-#   IRONPAY_PRODUCT_HASH
+#   FREEPAY_PUBLIC_KEY        <- chave pública da sua conta FreePay
+#   FREEPAY_SECRET_KEY        <- chave secreta da sua conta FreePay
 #   SUPABASE_URL
 #   SUPABASE_SERVICE_ROLE_KEY
 #   VITE_SUPABASE_URL
@@ -25,3 +36,6 @@ pages_build_output_dir = "dist"
 #   RESEND_FROM_EMAIL
 #   SITE_URL             <- URL do seu site (ex: https://loja-top-mix.pages.dev)
 #   CRON_SECRET          <- segredo opcional para proteger /api/process-recovery-queue
+#   ADMIN_USER           <- nome de usuario do painel admin
+#   ADMIN_PASS           <- senha do painel admin (use senha forte, 20+ chars)
+#   ADMIN_SESSION_SECRET <- gere com: openssl rand -hex 32

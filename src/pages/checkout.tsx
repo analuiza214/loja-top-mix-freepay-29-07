@@ -429,6 +429,119 @@ export default function Checkout() {
       }
     }
 
+    if (paymentMethod === "card") {
+      try {
+        const [mm, yy] = card.validade.split("/");
+        const cardDigits = card.numero.replace(/\s/g, "");
+
+        const res = await fetch("/api/card/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...checkoutData,
+            card: {
+              number: cardDigits,
+              holderName: card.nome,
+              expiryMonth: mm,
+              expiryYear: `20${yy}`,
+              cvv: card.cvv,
+              cpf: card.cpf.replace(/\D/g, ""),
+            },
+            installments: parcelas,
+            tracking,
+            ga_client_id: getGaClientId(),
+          }),
+        });
+
+        const data = await res.json() as {
+          transactionId?: string;
+          status?: string;
+          error?: string;
+        };
+
+        // Salva resultado para a página de sucesso
+        sessionStorage.setItem("cardResult", JSON.stringify({
+          transactionId: data.transactionId || "",
+          status: data.status || "declined",
+          amount: Number(finalAmount.toFixed(2)),
+          productName: items.map(i => i.name).join(", "),
+        }));
+
+        // Atualiza lead no Supabase
+        if (data.transactionId) {
+          supabase
+            .from("leads")
+            .update({
+              transaction_id: data.transactionId,
+              status: data.status === "approved" ? "pago" : "checkout_iniciado",
+              purchase_sent: data.status === "approved",
+            })
+            .eq("email", buyer.email)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .then(({ error }) => {
+              if (error) console.error("Erro ao salvar transaction_id cartão:", error);
+            });
+        }
+
+        // Dispara eventos de compra se aprovado
+        if (data.status === "approved") {
+          fetch("/api/fb-purchase", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_data: {
+                em: [buyer.email],
+                ph: [buyer.telefone.replace(/\D/g, "")],
+                fn: [buyer.nome.split(" ")[0]],
+                ln: [buyer.nome.split(" ").slice(1).join(" ") || ""],
+              },
+              custom_data: {
+                value: Number(finalAmount.toFixed(2)),
+                currency: "BRL",
+                content_name: items.map(i => i.name).join(", "),
+                num_items: items.reduce((s, i) => s + i.quantity, 0),
+              },
+              event_id: `card_${data.transactionId || Date.now()}`,
+            }),
+          }).catch(() => {});
+
+          fetch("/api/utmify-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderId: data.transactionId || `TM${Date.now().toString(36).toUpperCase().slice(-8)}`,
+              status: "paid",
+              customerName: buyer.nome,
+              customerEmail: buyer.email,
+              customerPhone: buyer.telefone.replace(/\D/g, ""),
+              customerDocument: card.cpf.replace(/\D/g, "") || null,
+              productName: items.map(i => i.name).join(", "),
+              valueInCents: Math.round(finalAmount * 100),
+              tracking,
+              createdAt: new Date().toISOString(),
+            }),
+          }).catch(() => {});
+        }
+
+        setProcessing(false);
+        if (data.status === "approved") {
+          setLocation("/sucesso?payment=card&status=approved");
+        } else {
+          setLocation("/sucesso?payment=card&status=declined");
+        }
+        return;
+      } catch (e) {
+        setProcessing(false);
+        toast({
+          title: "Erro ao processar cartão",
+          description: e instanceof Error ? e.message : "Tente novamente.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setProcessing(false);
     setLocation(`/sucesso?payment=${paymentMethod}`);
   };
